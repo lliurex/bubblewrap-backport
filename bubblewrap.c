@@ -937,7 +937,8 @@ switch_to_user_with_privs (void)
 /* Call setuid() and use capset() to adjust capabilities */
 static void
 drop_privs (bool keep_requested_caps,
-            bool already_changed_uid)
+            bool already_changed_uid,
+            bool set_dumpable)
 {
   assert (!keep_requested_caps || !is_privileged);
   /* Drop root uid */
@@ -947,9 +948,12 @@ drop_privs (bool keep_requested_caps,
 
   drop_all_caps (keep_requested_caps);
 
-  /* We don't have any privs now, so mark us dumpable which makes /proc/self be owned by the user instead of root */
-  if (prctl (PR_SET_DUMPABLE, 1, 0, 0, 0) != 0)
-    die_with_error ("can't set dumpable");
+  if (set_dumpable)
+    {
+      /* We don't have any privs now, so mark us dumpable which makes /proc/self be owned by the user instead of root */
+      if (prctl (PR_SET_DUMPABLE, 1, 0, 0, 0) != 0)
+        die_with_error ("can't set dumpable");
+    }
 }
 
 static void
@@ -3135,7 +3139,7 @@ main (int    argc,
           if (errno == EINVAL)
             die ("Creating new namespace failed, likely because the kernel does not support user namespaces.  bwrap must be installed setuid on such systems.");
           else if (errno == EPERM && !is_privileged)
-            die ("No permissions to create a new namespace, likely because the kernel does not allow non-privileged user namespaces. On e.g. debian this can be enabled with 'sysctl kernel.unprivileged_userns_clone=1'.");
+            die ("No permissions to create a new namespace, likely because the kernel does not allow non-privileged user namespaces. See <https://deb.li/bubblewrap> or <file:///usr/share/doc/bubblewrap/README.Debian.gz>.");
         }
 
       if (errno == ENOSPC)
@@ -3182,7 +3186,7 @@ main (int    argc,
         die_with_error ("Setting userns2 failed");
 
       /* We don't need any privileges in the launcher, drop them immediately. */
-      drop_privs (false, false);
+      drop_privs (false, false, true);
 
       /* Optionally bind our lifecycle to that of the parent */
       handle_die_with_parent ();
@@ -3369,8 +3373,10 @@ main (int    argc,
 
       if (child == 0)
         {
-          /* Unprivileged setup process */
-          drop_privs (false, true);
+          /* Unprivileged setup process.
+           * Note: Don't set dumpable, because we can still perform privileged
+           * operations via privileged_op(). */
+          drop_privs (false, true, false);
           close (privsep_sockets[0]);
           setup_newroot (opt_unshare_pid, privsep_sockets[1]);
           exit (0);
@@ -3499,7 +3505,7 @@ main (int    argc,
     }
 
   /* All privileged ops are done now, so drop caps we don't need */
-  drop_privs (!is_privileged, true);
+  drop_privs (!is_privileged, true, true);
 
   if (opt_block_fd != -1)
     {
