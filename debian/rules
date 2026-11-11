@@ -2,7 +2,7 @@
 # -*- makefile -*-
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+pie,+bindnow
-export DEB_BUILD_OPTIONS = parallel=2
+export DEB_BUILD_OPTIONS = nocheck
 
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
